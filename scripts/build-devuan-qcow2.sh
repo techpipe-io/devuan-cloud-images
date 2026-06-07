@@ -152,6 +152,8 @@ apt-get -y dist-upgrade
 apt-get install -y --no-install-recommends \
   linux-image-amd64 \
   grub-pc \
+  e2fsprogs \
+  zstd \
   openssh-server \
   cloud-init \
   qemu-guest-agent \
