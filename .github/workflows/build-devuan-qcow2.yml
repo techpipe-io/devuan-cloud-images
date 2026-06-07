@@ -37,6 +37,7 @@ jobs:
       - name: Build Devuan qcow2
         run: |
           sudo -E bash scripts/build-devuan-qcow2.sh "$DEVUAN_RELEASE" "$IMAGE_SIZE"
+          sudo chown -R "$USER:$USER" out
 
       - name: Checksums
         run: |
