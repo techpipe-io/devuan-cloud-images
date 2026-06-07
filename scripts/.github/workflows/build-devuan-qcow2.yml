@@ -1,0 +1,57 @@
+name: build-devuan-qcow2
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        default: excalibur
+      image_size:
+        default: 4G
+      publish_release:
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'devuan-*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DEVUAN_RELEASE: ${{ inputs.release || 'excalibur' }}
+      IMAGE_SIZE: ${{ inputs.image_size || '4G' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates debootstrap qemu-utils parted e2fsprogs \
+            dosfstools util-linux xz-utils gnupg debian-archive-keyring
+
+      - name: Build Devuan qcow2
+        run: |
+          sudo -E bash scripts/build-devuan-qcow2.sh "$DEVUAN_RELEASE" "$IMAGE_SIZE"
+
+      - name: Checksums
+        run: |
+          cd out
+          sha256sum *.qcow2 *.manifest.txt > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devuan-${{ env.DEVUAN_RELEASE }}-amd64-qcow2
+          path: out/*
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('devuan-{0}-{1}', env.DEVUUAN_RELEASE, github.run_number) }}
+          files: out/*
