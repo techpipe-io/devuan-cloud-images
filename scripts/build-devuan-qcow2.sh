@@ -47,7 +47,7 @@ udevadm settle
 mkfs.ext4 -F -L "$ROOT_LABEL" "$PART"
 mount "$PART" "$MOUNTPOINT"
 
-INCLUDE="devuan-keyring,ca-certificates,linux-image-amd64,grub-pc,openssh-server,cloud-init,qemu-guest-agent,sudo,ifupdown,isc-dhcp-client,eudev,sysvinit-core,elogind,rsyslog,bash-completion,less,nano,curl"
+INCLUDE="devuan-keyring,ca-certificates,linux-image-amd64,grub-pc,cloud-init,qemu-guest-agent,sudo,ifupdown,isc-dhcp-client,eudev,sysvinit-core,elogind,rsyslog,bash-completion,less,nano,curl"
 
 debootstrap \
   --arch="$ARCH" \
