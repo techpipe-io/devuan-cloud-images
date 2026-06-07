@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 RELEASE="${1:-excalibur}"
 SIZE="${2:-4G}"
@@ -36,7 +36,7 @@ fi
 
 modprobe nbd max_part=8
 qemu-img create -f raw "$WORKDIR/$IMAGE" "$SIZE"
-qemu-nbd --connect="$NBD" "$WORKDIR/$IMAGE"
+qemu-nbd --format=raw --connect="$NBD" "$WORKDIR/$IMAGE"
 
 parted -s "$NBD" mklabel msdos
 parted -s "$NBD" mkpart primary ext4 1MiB 100%
