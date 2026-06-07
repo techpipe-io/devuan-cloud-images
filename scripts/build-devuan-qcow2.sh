@@ -37,6 +37,7 @@ fi
 modprobe nbd max_part=8
 qemu-img create -f raw "$WORKDIR/$IMAGE" "$SIZE"
 qemu-nbd --format=raw --connect="$NBD" "$WORKDIR/$IMAGE"
+udevadm settle
 
 parted -s "$NBD" mklabel msdos
 parted -s "$NBD" mkpart primary ext4 1MiB 100%
@@ -44,17 +45,27 @@ parted -s "$NBD" set 1 boot on
 partprobe "$NBD"
 udevadm settle
 
+for _ in $(seq 1 20); do
+  [[ -b "$PART" ]] && break
+  partprobe "$NBD" || true
+  udevadm settle || true
+  sleep 1
+done
+[[ -b "$PART" ]]
+
 mkfs.ext4 -F -L "$ROOT_LABEL" "$PART"
 mount "$PART" "$MOUNTPOINT"
 
-INCLUDE="devuan-keyring,ca-certificates,linux-image-amd64,grub-pc,cloud-init,qemu-guest-agent,sudo,ifupdown,isc-dhcp-client,eudev,sysvinit-core,elogind,rsyslog,bash-completion,less,nano,curl"
+# Keep debootstrap minimal. Packages with maintainer scripts are installed later,
+# after /dev, /dev/pts, /proc and /sys are available inside the target rootfs.
+DEBOOTSTRAP_INCLUDE="devuan-keyring,ca-certificates,apt"
 
 debootstrap \
   --arch="$ARCH" \
   --variant=minbase \
   --merged-usr \
   --no-check-gpg \
-  --include="$INCLUDE" \
+  --include="$DEBOOTSTRAP_INCLUDE" \
   "$RELEASE" "$MOUNTPOINT" "$MIRROR"
 
 cat > "$MOUNTPOINT/etc/apt/sources.list" <<APT
@@ -112,24 +123,62 @@ GRUB_TERMINAL="serial console"
 GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
 GRUB
 
-# Avoid service starts in chroot.
-printf '#!/bin/sh\nexit 101\n' > "$MOUNTPOINT/usr/sbin/policy-rc.d"
-chmod +x "$MOUNTPOINT/usr/sbin/policy-rc.d"
-
+mkdir -p "$MOUNTPOINT/dev" "$MOUNTPOINT/dev/pts" "$MOUNTPOINT/proc" "$MOUNTPOINT/sys" "$MOUNTPOINT/run"
 mount --bind /dev "$MOUNTPOINT/dev"
 mount --bind /dev/pts "$MOUNTPOINT/dev/pts"
 mount -t proc proc "$MOUNTPOINT/proc"
 mount -t sysfs sys "$MOUNTPOINT/sys"
 mount --bind /run "$MOUNTPOINT/run"
 
-chroot "$MOUNTPOINT" /bin/bash -eux <<CHROOT
+cat > "$MOUNTPOINT/usr/sbin/policy-rc.d" <<'POLICY'
+#!/bin/sh
+exit 101
+POLICY
+chmod +x "$MOUNTPOINT/usr/sbin/policy-rc.d"
+
+cat > "$MOUNTPOINT/etc/apt/apt.conf.d/99cloud-image-build" <<'APTCONF'
+APT::Install-Recommends "false";
+APT::Install-Suggests "false";
+Dpkg::Options {
+  "--force-confdef";
+  "--force-confold";
+};
+APTCONF
+
+chroot "$MOUNTPOINT" /bin/bash -eux <<'CHROOT'
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get -y dist-upgrade
+apt-get install -y --no-install-recommends \
+  linux-image-amd64 \
+  grub-pc \
+  openssh-server \
+  cloud-init \
+  qemu-guest-agent \
+  sudo \
+  ifupdown \
+  isc-dhcp-client \
+  eudev \
+  sysvinit-core \
+  elogind \
+  rsyslog \
+  bash-completion \
+  less \
+  nano \
+  curl
+
+# Make sure host keys exist for images where openssh postinst skipped generation.
 dpkg-reconfigure openssh-server || true
+ssh-keygen -A || true
+
 update-initramfs -u -k all
 update-grub
-grub-install --target=i386-pc --recheck "$NBD"
+CHROOT
+
+chroot "$MOUNTPOINT" grub-install --target=i386-pc --recheck "$NBD"
+
+chroot "$MOUNTPOINT" /bin/bash -eux <<'CHROOT'
+export DEBIAN_FRONTEND=noninteractive
 apt-get autoremove --purge -y
 apt-get clean
 rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
