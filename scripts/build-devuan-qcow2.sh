@@ -93,10 +93,9 @@ cat > "$MOUNTPOINT/etc/network/interfaces" <<NET
 source /etc/network/interfaces.d/*
 auto lo
 iface lo inet loopback
-allow-hotplug ens3
 iface ens3 inet dhcp
-allow-hotplug eth0
 iface eth0 inet dhcp
+iface eth0 inet6 manual
 NET
 
 mkdir -p "$MOUNTPOINT/etc/cloud/cloud.cfg.d"
